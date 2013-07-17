@@ -10,3 +10,11 @@ After downloading, rename folder to 'Adafruit_NeoPixel' and install in Arduino L
 [pixel]:  http://adafruit.com/products/1312
 [stick]:  http://adafruit.com/products/1426
 [shield]: http://adafruit.com/products/1430
+
+changes in this branch
+=========================
+
+Branched July 17 2013:
+
+* Add ability to resize pixel strand length dynamically
+* Add feedback loop detection of total loop length

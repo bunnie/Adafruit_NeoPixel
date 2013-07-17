@@ -74,6 +74,167 @@ void Adafruit_NeoPixel::begin(void) {
   digitalWrite(pin, LOW);
 }
 
+uint8_t Adafruit_NeoPixel::measureLength(void) {
+  if(!pixels) return 0;
+
+  while((micros() - endTime) < 50L);
+
+  noInterrupts(); // Need 100% focus on instruction timing
+
+  volatile uint16_t
+    i   = numBytes; // Loop counter
+  volatile uint8_t
+   *ptr = pixels,   // Pointer to next byte
+    b   = *ptr++,   // Current byte value
+    hi,             // PORT w/output bit set high
+    lo;             // PORT w/output bit set low
+
+  volatile uint8_t n1, n2 = 0;  // First, next bits out
+
+  volatile uint8_t count; // count number of high pulses we saw after completing the run
+  volatile uint8_t input; // input value for feedback
+  
+  count = 0;
+
+  // this is the "show" routine from below, just the branch that gets run on the attiny85
+  hi = PORTB |  pinMask;
+  lo = PORTB & ~pinMask;
+  n1 = lo;
+  if(b & 0x80) n1 = hi;
+
+  asm volatile(
+	       "eor %0, %0\n\t" // clear count
+	       
+	       "eor r8, r8\n\t" // clear sampling registers
+	       "eor r9, r9\n\t"
+	       "eor r10, r10\n\t"
+	       "eor r11, r11\n\t"
+	       "eor r12, r12\n\t"
+	       "eor r13, r13\n\t"
+	       "eor r14, r14\n\t"
+	       "eor r15, r15\n\t"
+
+	       // "cbi %2, 4 \n\t" // just for debug, clear B4 to 0
+	       
+	       "headML:\n\t"
+	       "out  %2, %3\n\t" // 7
+	       "mov  %5, %6\n\t"
+	       "out  %2, %4\n\t"
+	       "rjmp .+0\n\t"
+	       "sbrc %7, 6\n\t"
+	       "mov %5, %3\n\t"
+	       "out  %2, %6\n\t"
+	       "rjmp .+0\n\t"
+
+	       "out  %2, %3\n\t" // 6
+	       "mov  %4, %6\n\t"
+	       "out  %2, %5\n\t"
+	       "rjmp .+0\n\t"
+	       "sbrc %7, 5\n\t"
+	       "mov %4, %3\n\t"
+	       "out  %2, %6\n\t" 
+	       "rjmp .+0\n\t"
+
+	       "out  %2, %3\n\t" // 5
+	       "mov  %5, %6\n\t"
+	       "out  %2, %4\n\t"
+	       "rjmp .+0\n\t"
+	       "sbrc %7, 4\n\t"
+	       "mov %5, %3\n\t"
+	       "out  %2, %6\n\t" 
+	       "rjmp .+0\n\t"
+
+	       "out  %2, %3\n\t" // 4
+	       "mov  %4, %6\n\t"
+	       "out  %2, %5\n\t"
+	       "rjmp .+0\n\t"
+	       "sbrc %7, 3\n\t"
+	       "mov %4, %3\n\t"
+	       "out  %2, %6\n\t" 
+	       "rjmp .+0\n\t"
+
+	       "out  %2, %3\n\t" // 3
+	       "mov  %5, %6\n\t"
+	       "out  %2, %4\n\t"
+	       "rjmp .+0\n\t"
+	       "sbrc %7, 2\n\t"
+	       "mov %5, %3\n\t"
+	       "out  %2, %6\n\t" 
+	       "rjmp .+0\n\t"
+
+	       "out  %2, %3\n\t" // 2
+	       "mov  %4, %6\n\t"
+	       "out  %2, %5\n\t"
+	       "rjmp .+0\n\t"
+	       "sbrc %7, 1\n\t"
+	       "mov %4, %3\n\t"
+	       "out  %2, %6\n\t"
+	       "rjmp .+0\n\t"
+
+	       "out  %2, %3\n\t" // 1
+	       "mov  %5, %6\n\t"
+	       "out  %2, %4\n\t"
+	       "rjmp .+0\n\t"
+	       "sbrc %7, 0\n\t"
+	       "mov %5, %3\n\t"
+	       "out  %2, %6\n\t"
+	       "sbiw %8, 1\n\t"  // i-- computed here
+		   
+	       "out  %2, %3\n\t" // 0
+	       "mov  %4, %6\n\t"
+	       "out  %2, %5\n\t"  // on 1's test pattern, this is still a 1
+	       "ld   %7, %a9+\n\t" // next value loaded here
+	       "sbrc %7, 7\n\t"
+	       "mov %4, %3\n\t"
+	       "out  %2, %6\n\t"  // 1->0, plus 125 ns (due to tpd of GPIO)
+	       "brne headML\n\t" // 1 cycle for not taken, 2 for taken
+
+	       "nop\n\t" // probably right about now, the "0" is manifesting here, delay a couple cycles
+	       "nop\n\t" // to center the next "1" in the sampling window below (about 500ns after 1->0)
+	       
+	       //	       "sbi %2, 4 \n\t" // just for debug, set B4 to 0
+
+	       "in r8, %1\n\t"  // 1   // very quickly sample the feedback to see if a pulse came out
+	       "in r9, %1\n\t"  // 1
+	       "in r10, %1\n\t"  // 1
+	       "in r11, %1\n\t"  // 1
+	       "in r12, %1\n\t"  // 1
+	       "in r13, %1\n\t"  // 1
+	       "in r14, %1\n\t"  // 1
+	       "in r15, %1\n\t"  // 1
+
+	       "sbrc r8, 3\n\t"
+	       "inc %0\n\t"
+	       "sbrc r9, 3\n\t"
+	       "inc %0\n\t"
+	       "sbrc r10, 3\n\t"
+	       "inc %0\n\t"
+	       "sbrc r11, 3\n\t"
+	       "inc %0\n\t"
+	       "sbrc r12, 3\n\t"
+	       "inc %0\n\t"
+	       "sbrc r13, 3\n\t"
+	       "inc %0\n\t"
+	       "sbrc r14, 3\n\t"
+	       "inc %0\n\t"
+	       "sbrc r15, 3\n\t"
+	       "inc %0\n\t"
+
+	       : "+r" (count)
+	       : "I" (_SFR_IO_ADDR(PINB)), "I" (_SFR_IO_ADDR(PORTB)), "r" (hi),
+		 "r" (n1), "r" (n2), "r" (lo), "r" (b), "w" (i), "e" (ptr) 
+	       : "r7", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"
+	       );
+  
+      // high time is 662ns, following 120ns after the end of the low cycle
+      // should be about 5 cycles of high time sampled
+
+      interrupts();
+      endTime = micros(); // Save EOD time for latch on next call
+      //      return count;
+      return count;
+}
+
 void Adafruit_NeoPixel::show(void) {
 
   if(!pixels) return;

@@ -51,6 +51,8 @@ class Adafruit_NeoPixel {
     setinpin(uint8_t p);
   uint16_t
     numPixels(void);
+  uint8_t
+    measureLength(void);
   static uint32_t
     Color(uint8_t r, uint8_t g, uint8_t b);
   uint32_t
