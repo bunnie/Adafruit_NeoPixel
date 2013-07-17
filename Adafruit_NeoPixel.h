@@ -80,4 +80,3 @@ class Adafruit_NeoPixel {
 };
 
 #endif // ADAFRUIT_NEOPIXEL_H
-
